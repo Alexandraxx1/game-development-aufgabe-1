@@ -2,64 +2,113 @@ using UnityEngine;
 
 public class PlayerMovement : MonoBehaviour
 {
+    [Header("Movement")]
     public float speed = 5f;
     public float gravity = -9.81f;
     public float jumpHeight = 2f;
-    public float rotationSpeed = 120f;
+
+    [Header("Mouse Look")]
+    public float mouseSensitivity = 180f;
+    public Transform cameraTransform;
+    public float minPitch = -60f;
+    public float maxPitch = 60f;
 
     private CharacterController controller;
     private Vector3 velocity;
     private Vector3 platformVelocity;
 
-    void Start()
+    private float cameraPitch = 0f;
+
+    private void Start()
     {
         controller = GetComponent<CharacterController>();
+
+        if (cameraTransform == null && Camera.main != null)
+        {
+            cameraTransform = Camera.main.transform;
+        }
     }
 
-    void FixedUpdate()
+    private void Update()
+    {
+        RotateWithMouse();
+
+        bool isGrounded = controller.isGrounded;
+
+        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        {
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+        }
+    }
+
+    private void FixedUpdate()
     {
         bool isGrounded = controller.isGrounded;
 
-        if (isGrounded && velocity.y < 0)
+        if (isGrounded && velocity.y < 0f)
         {
             velocity.y = -2f;
         }
 
-        // Bewegung nur mit Pfeiltasten
         float moveX = 0f;
         float moveZ = 0f;
 
-        if (Input.GetKey(KeyCode.LeftArrow)) moveX = -1f;
-        if (Input.GetKey(KeyCode.RightArrow)) moveX = 1f;
-        if (Input.GetKey(KeyCode.UpArrow)) moveZ = 1f;
-        if (Input.GetKey(KeyCode.DownArrow)) moveZ = -1f;
+        // WASD oder Pfeiltasten
+        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
+            moveX = -1f;
+
+        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
+            moveX = 1f;
+
+        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow))
+            moveZ = 1f;
+
+        if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow))
+            moveZ = -1f;
 
         Vector3 move = transform.right * moveX + transform.forward * moveZ;
         Vector3 playerMovement = move.normalized * speed;
 
-        // Plattform-Geschwindigkeit nur anwenden, wenn Spieler nicht springt
         platformVelocity = isGrounded ? GetPlatformVelocity() : Vector3.zero;
 
         Vector3 combinedMovement = playerMovement + platformVelocity;
         controller.Move(combinedMovement * Time.fixedDeltaTime);
 
-        // Rotation nur mit A / D
-        float rotationY = 0f;
-
-        if (Input.GetKey(KeyCode.A)) rotationY = -1f;
-        if (Input.GetKey(KeyCode.D)) rotationY = 1f;
-
-        transform.Rotate(Vector3.up * rotationY * rotationSpeed * Time.fixedDeltaTime);
-
-        // Springen
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
-        {
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-        }
-
-        // Gravitation
         velocity.y += gravity * Time.fixedDeltaTime;
         controller.Move(velocity * Time.fixedDeltaTime);
+    }
+
+    private void RotateWithMouse()
+    {
+        if (Input.GetMouseButton(1))
+        {
+            float mouseX = Input.GetAxis("Mouse X");
+            float mouseY = Input.GetAxis("Mouse Y");
+
+            // Spieler links/rechts drehen
+            transform.Rotate(Vector3.up * mouseX * mouseSensitivity * Time.deltaTime);
+
+            // Kamera hoch/runter drehen
+            cameraPitch -= mouseY * mouseSensitivity * Time.deltaTime;
+            cameraPitch = Mathf.Clamp(cameraPitch, minPitch, maxPitch);
+
+            if (cameraTransform != null)
+            {
+                cameraTransform.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+            }
+        }
+
+        if (Input.GetMouseButtonDown(1))
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+
+        if (Input.GetMouseButtonUp(1))
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 
     private Vector3 GetPlatformVelocity()
