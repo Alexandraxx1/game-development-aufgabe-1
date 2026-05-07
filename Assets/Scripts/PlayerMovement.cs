@@ -7,45 +7,30 @@ public class PlayerMovement : MonoBehaviour
     public float gravity = -9.81f;
     public float jumpHeight = 2f;
 
-    [Header("Mouse Look")]
+    [Header("Mouse Rotation")]
     public float mouseSensitivity = 180f;
-    public Transform cameraTransform;
-    public float minPitch = -60f;
-    public float maxPitch = 60f;
+
+    [Header("Audio")]
+    [SerializeField] private AudioClip footstepClip;
+    [SerializeField] private AudioClip jumpClip;
 
     private CharacterController controller;
     private Vector3 velocity;
     private Vector3 platformVelocity;
 
-    private float cameraPitch = 0f;
+    private AudioSource audioSource;
 
-    private void Start()
+    void Start()
     {
         controller = GetComponent<CharacterController>();
-
-        if (cameraTransform == null && Camera.main != null)
-        {
-            cameraTransform = Camera.main.transform;
-        }
+        audioSource = GetComponent<AudioSource>();
     }
 
-    private void Update()
-    {
-        RotateWithMouse();
-
-        bool isGrounded = controller.isGrounded;
-
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
-        {
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-        }
-    }
-
-    private void FixedUpdate()
+    void Update()
     {
         bool isGrounded = controller.isGrounded;
 
-        if (isGrounded && velocity.y < 0f)
+        if (isGrounded && velocity.y < 0)
         {
             velocity.y = -2f;
         }
@@ -53,7 +38,6 @@ public class PlayerMovement : MonoBehaviour
         float moveX = 0f;
         float moveZ = 0f;
 
-        // WASD oder Pfeiltasten
         if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
             moveX = -1f;
 
@@ -67,15 +51,57 @@ public class PlayerMovement : MonoBehaviour
             moveZ = -1f;
 
         Vector3 move = transform.right * moveX + transform.forward * moveZ;
+
         Vector3 playerMovement = move.normalized * speed;
 
         platformVelocity = isGrounded ? GetPlatformVelocity() : Vector3.zero;
 
         Vector3 combinedMovement = playerMovement + platformVelocity;
-        controller.Move(combinedMovement * Time.fixedDeltaTime);
 
-        velocity.y += gravity * Time.fixedDeltaTime;
-        controller.Move(velocity * Time.fixedDeltaTime);
+        controller.Move(combinedMovement * Time.deltaTime);
+
+        HandleFootsteps(moveX, moveZ, isGrounded);
+
+        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        {
+            if (jumpClip != null)
+            {
+                audioSource.PlayOneShot(jumpClip);
+            }
+
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+        }
+
+        velocity.y += gravity * Time.deltaTime;
+
+        controller.Move(velocity * Time.deltaTime);
+
+        RotateWithMouse();
+    }
+
+    private void HandleFootsteps(float moveX, float moveZ, bool isGrounded)
+    {
+        if (footstepClip == null)
+            return;
+
+        bool isMoving = Mathf.Abs(moveX) > 0.1f || Mathf.Abs(moveZ) > 0.1f;
+
+        if (isMoving && isGrounded)
+        {
+            if (!audioSource.isPlaying)
+            {
+                audioSource.clip = footstepClip;
+                audioSource.loop = true;
+                audioSource.Play();
+            }
+        }
+        else
+        {
+            if (audioSource.isPlaying)
+            {
+                audioSource.Stop();
+            }
+        }
     }
 
     private void RotateWithMouse()
@@ -83,19 +109,10 @@ public class PlayerMovement : MonoBehaviour
         if (Input.GetMouseButton(1))
         {
             float mouseX = Input.GetAxis("Mouse X");
-            float mouseY = Input.GetAxis("Mouse Y");
 
-            // Spieler links/rechts drehen
-            transform.Rotate(Vector3.up * mouseX * mouseSensitivity * Time.deltaTime);
-
-            // Kamera hoch/runter drehen
-            cameraPitch -= mouseY * mouseSensitivity * Time.deltaTime;
-            cameraPitch = Mathf.Clamp(cameraPitch, minPitch, maxPitch);
-
-            if (cameraTransform != null)
-            {
-                cameraTransform.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
-            }
+            transform.Rotate(
+                Vector3.up * mouseX * mouseSensitivity * Time.deltaTime
+            );
         }
 
         if (Input.GetMouseButtonDown(1))
@@ -117,9 +134,11 @@ public class PlayerMovement : MonoBehaviour
 
         if (Physics.Raycast(transform.position, Vector3.down, out hit, 2f))
         {
-            if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Platforms"))
+            if (hit.collider.gameObject.layer ==
+                LayerMask.NameToLayer("Platforms"))
             {
-                MovingPlatform platform = hit.collider.GetComponent<MovingPlatform>();
+                MovingPlatform platform =
+                    hit.collider.GetComponent<MovingPlatform>();
 
                 if (platform != null)
                 {
@@ -129,5 +148,33 @@ public class PlayerMovement : MonoBehaviour
         }
 
         return Vector3.zero;
+    }
+
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        Enemy enemy = hit.collider.GetComponent<Enemy>();
+
+        if (enemy == null)
+            return;
+
+        bool playerAboveEnemy =
+            transform.position.y > enemy.transform.position.y + 1f;
+
+        bool playerIsFalling = velocity.y < 0f;
+
+        if (playerAboveEnemy && playerIsFalling)
+        {
+            enemy.SquashEnemy();
+
+            velocity.y =
+                Mathf.Sqrt(jumpHeight * -2f * gravity) * 0.5f;
+
+            return;
+        }
+
+        Vector3 pushDirection =
+            new Vector3(hit.moveDirection.x, 0f, hit.moveDirection.z);
+
+        enemy.Push(pushDirection);
     }
 }
